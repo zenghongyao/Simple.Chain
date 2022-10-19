@@ -5,29 +5,69 @@ using Simple.Tron.ABI;
 using Simple.Tron.ABI.FunctionEncoding;
 using Simple.Tron.Contracts;
 using Simple.Tron.Crypto;
-using System.Net.Http.Headers;
 
 namespace Simple.Tron
 {
     /// <summary>
     /// 钱包相关
     /// </summary>
-    public class Wallet : TronService
+    public class Wallet
     {
-        public Wallet() : this(DEFAULT_BASE_URL)
-        {
+        /// <summary>
+        /// 默认主网
+        /// </summary>
+        private const string DEFAULT_MAINNET = "https://api.trongrid.io";
+        /// <summary>
+        /// 默认测试网络
+        /// </summary>
+        private const string DEFAULT_TESTNET = "https://api.shasta.trongrid.io";
 
+        private readonly string baseUrl;
+        private readonly string testUrl;
+        private readonly string? proxyUrl;
+
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="mainnet">主网</param>
+        /// <param name="testnet">测试（建议自行部署）</param>
+        /// <param name="proxy">代理地址</param>
+        public Wallet(string mainnet = DEFAULT_MAINNET, string testnet = DEFAULT_TESTNET, string? proxy = null)
+        {
+            this.baseUrl = mainnet;
+            this.testUrl = testnet;
+            this.proxyUrl = proxy;
         }
-        public Wallet(string baseUrl) : base(baseUrl)
-        {
 
+        /// <summary>
+        /// 创建请求客户端
+        /// </summary>
+        /// <param name="requesturi"></param>
+        /// <param name="method"></param>
+        /// <returns></returns>
+        private RestClient CreateClient(string requesturi, Method method, out RestRequest request)
+        {
+            RestClient client;
+            if (string.IsNullOrWhiteSpace(proxyUrl))
+            {
+                client = new RestClient(baseUrl);
+                request = new RestRequest(GET_ACCOUNT, Method.Post);
+            }
+            else
+            {
+                Uri uri = new Uri(proxyUrl);
+                Console.WriteLine($"{uri.Scheme}://{uri.Host}");
+                Console.WriteLine($"{uri.PathAndQuery}{baseUrl}{requesturi}");
+                client = new RestClient($"{uri.Scheme}://{uri.Host}");
+                request = new RestRequest($"{uri.PathAndQuery}{baseUrl}{requesturi}", Method.Post);
+            }
+            return client;
         }
 
         private const string CREATE_ACCOUNT = "/wallet/createaccount";
         public Transaction CreateAccount(string owner_address, string account_address)
         {
-            var client = new RestClient(baseUrl);
-            RestRequest request = new RestRequest(CREATE_ACCOUNT, Method.Post);
+            RestClient client = CreateClient(CREATE_ACCOUNT, Method.Post, out RestRequest request);
             request.AddHeader("accept", "application/json");
             request.AddHeader("content-type", "application/json");
             Dictionary<string, object> parameters = new Dictionary<string, object>
@@ -48,8 +88,7 @@ namespace Simple.Tron
         /// <param name="address"></param>
         public string GetAccount(string address)
         {
-            var client = new RestClient(baseUrl);
-            var request = new RestRequest(GET_ACCOUNT, Method.Post);
+            RestClient client = CreateClient(GET_ACCOUNT, Method.Post, out RestRequest request);
             request.AddHeader("accept", "application/json");
             request.AddHeader("content-type", "application/json");
             Dictionary<string, object> parameters = new Dictionary<string, object>
@@ -66,46 +105,29 @@ namespace Simple.Tron
         private const string CREATE_TRANSACTION = "/wallet/createtransaction";
 
         /// <summary>
-        /// 创建一笔转账 TRX 的 Transaction.
+        /// TRX转账
         /// </summary>
         /// <param name="owner_address"></param>
         /// <param name="to_address"></param>
         /// <param name="amount"></param>
-        public Transaction CreateTransaction(string owner_address, string to_address, long amount)
+        public Transaction Transaction(string owner_address, string to_address, decimal amount)
         {
+            RestClient client = CreateClient(CREATE_TRANSACTION, Method.Post, out RestRequest request);
             Dictionary<string, object> parameters = new Dictionary<string, object>
             {
                 {"owner_address",owner_address },
                 {"to_address",to_address },
-                {"amount",amount },
+                {"amount",amount.ToBigNumber() },
                 {"visible",true }
             };
-            var client = new HttpClient();
-            var request = new HttpRequestMessage
-            {
-                Method = HttpMethod.Post,
-                RequestUri = new Uri(baseUrl + CREATE_TRANSACTION),
-                Headers =
-                {
-                    { "accept", "application/json" },
-                },
-                Content = new StringContent(JsonConvert.SerializeObject(parameters))
-                {
-                    Headers =
-                {
-                    ContentType = new MediaTypeHeaderValue("application/json")
-                }
-                }
-            };
-            using (var response = client.Send(request))
-            {
-                response.EnsureSuccessStatusCode();
-                var content = response.Content.ReadAsStringAsync().Result;
-                return content;
-            }
-        }
+            request.AddHeader("accept", "application/json");
+            request.AddHeader("content-type", "application/json");
+            request.AddParameter("application/json", JsonConvert.SerializeObject(parameters), ParameterType.RequestBody);
+            RestResponse response = client.Execute(request);
+            if (!response.IsSuccessful) throw new TronException(response);
 
-        private const string TRIGGER_SMART_CONTRACT = "/wallet/triggersmartcontract";
+            return response.Content;
+        }
         /// <summary>
         /// 合约
         /// </summary>
@@ -114,7 +136,7 @@ namespace Simple.Tron
         /// <param name="contract_address"></param>
         /// <param name="amount"></param>
         /// <returns></returns>
-        public Transaction TriggerSmartContract(string owner_address, string to_address, string contract_address, decimal amount)
+        public Transaction Transaction(string owner_address, string to_address, string contract_address, decimal amount)
         {
             var functionABI = ABITypedRegistry.GetFunctionABI<TransferFunction>();
             byte[] callerAddressBytes = Base58Encoder.DecodeFromBase58Check(to_address);
@@ -126,7 +148,7 @@ namespace Simple.Tron
             var trc20Transfer = new TransferFunction
             {
                 To = toAddressHex,
-                TokenAmount = Convert.ToInt64(amount / 0.000001M),
+                TokenAmount = amount.ToBigNumber(),
             };
 
             var encodedHex = new FunctionCallEncoder().EncodeRequest(trc20Transfer, functionABI.Sha3Signature);
@@ -140,13 +162,26 @@ namespace Simple.Tron
                 {"parameter",encodedHex },
                 {"visible",true },
             };
-            var client = new RestClient(baseUrl);
-            var request = new RestRequest(TRIGGER_SMART_CONTRACT, Method.Post);
+            //执行合约
+            Transaction transaction = this.TriggerSmartContract(parameters);
+            //广播
+            this.BroadcastTransaction(transaction);
+            return transaction;
+        }
+
+        private const string TRIGGER_SMART_CONTRACT = "/wallet/triggersmartcontract";
+        /// <summary>
+        /// 合约
+        /// </summary>
+        /// <param name="parameters"></param>
+        /// <returns></returns>
+        public Transaction TriggerSmartContract(Dictionary<string, object> parameters)
+        {
+            RestClient client = CreateClient(TRIGGER_SMART_CONTRACT, Method.Post, out RestRequest request);
             request.AddHeader("accept", "application/json");
             request.AddHeader("content-type", "application/json");
             request.AddParameter("application/json", JsonConvert.SerializeObject(parameters), ParameterType.RequestBody);
             RestResponse response = client.Execute(request);
-            Console.WriteLine(response.Content);
             JObject obj = JObject.Parse(response.Content);
             return obj.Value<JToken>("transaction").ToString();
         }
@@ -156,9 +191,9 @@ namespace Simple.Tron
         /// <param name="transaction"></param>
         /// <param name="privateKey"></param>
         /// <returns></returns>
-        public Transaction GetTransactionSign(Transaction transaction, string privateKey)
+        private Transaction GetTransactionSign(Transaction transaction, string privateKey)
         {
-            var client = new RestClient("http://47.243.127.195:9090");
+            var client = new RestClient(testUrl);
             var request = new RestRequest("/wallet/gettransactionsign", Method.Post);
             request.AddHeader("accept", "application/json");
             request.AddHeader("content-type", "application/json");
@@ -178,8 +213,7 @@ namespace Simple.Tron
         /// <param name="transaction"></param>
         public void BroadcastTransaction(Transaction transaction)
         {
-            var client = new RestClient(baseUrl);
-            var request = new RestRequest(BROADCAST_TRANSACTION, Method.Post);
+            RestClient client = CreateClient(BROADCAST_TRANSACTION, Method.Post, out RestRequest request);
             request.AddHeader("accept", "application/json");
             request.AddHeader("content-type", "application/json");
             request.AddParameter("application/json", JsonConvert.SerializeObject(transaction), ParameterType.RequestBody);
@@ -193,8 +227,7 @@ namespace Simple.Tron
         /// <param name="value"></param>
         public Transaction GetTransactionById(string value)
         {
-            var client = new RestClient(baseUrl);
-            var request = new RestRequest(GET_TRANSACTION_BY_ID, Method.Post);
+            RestClient client = CreateClient(GET_TRANSACTION_BY_ID, Method.Post, out RestRequest request);
             request.AddHeader("accept", "application/json");
             request.AddHeader("content-type", "application/json");
             request.AddParameter("application/json", JsonConvert.SerializeObject(new { value }), ParameterType.RequestBody);
@@ -209,8 +242,7 @@ namespace Simple.Tron
         /// <param name="value"></param>
         public TransactionInfo GetTransactionInfoById(string value)
         {
-            var client = new RestClient(baseUrl);
-            var request = new RestRequest(GET_TRANSACTION_INFOBYID, Method.Post);
+            RestClient client = CreateClient(GET_TRANSACTION_INFOBYID, Method.Post, out RestRequest request);
             request.AddHeader("accept", "application/json");
             request.AddHeader("content-type", "application/json");
             request.AddParameter("application/json", JsonConvert.SerializeObject(new { value }), ParameterType.RequestBody);
