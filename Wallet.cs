@@ -1,10 +1,10 @@
-﻿using Newtonsoft.Json;
+﻿using Nethereum.ABI;
+using Nethereum.Contracts.Standards.ERC20.ContractDefinition;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using RestSharp;
-using Simple.Tron.ABI;
-using Simple.Tron.ABI.FunctionEncoding;
-using Simple.Tron.Contracts;
 using Simple.Tron.Crypto;
+using System.Numerics;
 
 namespace Simple.Tron
 {
@@ -51,13 +51,11 @@ namespace Simple.Tron
             if (string.IsNullOrWhiteSpace(proxyUrl))
             {
                 client = new RestClient(baseUrl);
-                request = new RestRequest(GET_ACCOUNT, Method.Post);
+                request = new RestRequest(requesturi, method);
             }
             else
             {
                 Uri uri = new Uri(proxyUrl);
-                Console.WriteLine($"{uri.Scheme}://{uri.Host}");
-                Console.WriteLine($"{uri.PathAndQuery}{baseUrl}{requesturi}");
                 client = new RestClient($"{uri.Scheme}://{uri.Host}");
                 request = new RestRequest($"{uri.PathAndQuery}{baseUrl}{requesturi}", Method.Post);
             }
@@ -65,6 +63,13 @@ namespace Simple.Tron
         }
 
         private const string CREATE_ACCOUNT = "/wallet/createaccount";
+        /// <summary>
+        /// 创建一个账号
+        /// </summary>
+        /// <param name="owner_address"></param>
+        /// <param name="account_address"></param>
+        /// <returns></returns>
+        /// <exception cref="TronException"></exception>
         public Transaction CreateAccount(string owner_address, string account_address)
         {
             RestClient client = CreateClient(CREATE_ACCOUNT, Method.Post, out RestRequest request);
@@ -138,27 +143,14 @@ namespace Simple.Tron
         /// <returns></returns>
         public Transaction Transaction(string owner_address, string to_address, string contract_address, decimal amount)
         {
-            var functionABI = ABITypedRegistry.GetFunctionABI<TransferFunction>();
-            byte[] callerAddressBytes = Base58Encoder.DecodeFromBase58Check(to_address);
-            var toAddressBytes = new byte[20];
-            Array.Copy(callerAddressBytes, 1, toAddressBytes, 0, toAddressBytes.Length);
-
-            var toAddressHex = "0x" + toAddressBytes.ToHex();
-
-            var trc20Transfer = new TransferFunction
-            {
-                To = toAddressHex,
-                TokenAmount = amount.ToBigNumber(),
-            };
-
-            var encodedHex = new FunctionCallEncoder().EncodeRequest(trc20Transfer, functionABI.Sha3Signature);
-
-            Dictionary<string, object> parameters = new Dictionary<string, object>
+            ABIEncode abiEncode = new();
+            string encodedHex = abiEncode.GetABIParamsEncoded(new TransferFunction() { To = to_address.ToHexAddress(false), Value = amount.ToBigNumber() }).ToHex();
+            Dictionary<string, object> parameters = new()
             {
                 {"owner_address",owner_address },
                 {"contract_address",contract_address },
                 {"function_selector","transfer(address,uint256)" },
-                {"fee_limit",1000000000 },
+                {"fee_limit",10_0000_0000 },
                 {"parameter",encodedHex },
                 {"visible",true },
             };
@@ -171,7 +163,7 @@ namespace Simple.Tron
 
         private const string TRIGGER_SMART_CONTRACT = "/wallet/triggersmartcontract";
         /// <summary>
-        /// 合约
+        /// 执行合约
         /// </summary>
         /// <param name="parameters"></param>
         /// <returns></returns>
@@ -233,22 +225,6 @@ namespace Simple.Tron
             request.AddParameter("application/json", JsonConvert.SerializeObject(new { value }), ParameterType.RequestBody);
             RestResponse response = client.Execute(request);
             return response.Content;
-        }
-
-        private const string GET_TRANSACTION_INFOBYID = "/wallet/gettransactioninfobyid";
-        /// <summary>
-        /// 按交易哈希查询交易
-        /// </summary>
-        /// <param name="value"></param>
-        public TransactionInfo GetTransactionInfoById(string value)
-        {
-            RestClient client = CreateClient(GET_TRANSACTION_INFOBYID, Method.Post, out RestRequest request);
-            request.AddHeader("accept", "application/json");
-            request.AddHeader("content-type", "application/json");
-            request.AddParameter("application/json", JsonConvert.SerializeObject(new { value }), ParameterType.RequestBody);
-            RestResponse response = client.Execute(request);
-            Console.WriteLine(response.Content);
-            return JsonConvert.DeserializeObject<TransactionInfo>(response.Content);
         }
     }
 }
