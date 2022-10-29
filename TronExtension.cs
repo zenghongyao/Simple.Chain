@@ -22,6 +22,15 @@ namespace Simple.Tron
             return amount * sum;
         }
 
+        public static decimal ToNumber(this long value)
+        {
+            return value * sum;
+        }
+
+        public static decimal ToNumber(this int value)
+        {
+            return value * sum;
+        }
         public static decimal ToNumber(this BigInteger value)
         {
             long v = (long)value;
@@ -35,9 +44,25 @@ namespace Simple.Tron
         /// <returns></returns>
         public static string ToBase58Address(this string hex_address)
         {
+            if (hex_address.StartsWith("0x"))
+            {
+                hex_address = hex_address[2..];
+            }
             return Base58Encoder.EncodeFromHex(hex_address, 0x41);
         }
-
+        /// <summary>
+        /// 将波场hex地址转出eth hex地址
+        /// </summary>
+        /// <param name="tron_address"></param>
+        /// <returns></returns>
+        public static string ToEthAddress(this string tron_address)
+        {
+            if (tron_address.StartsWith("41"))
+            {
+                tron_address = tron_address[2..];
+            }
+            return "0x" + tron_address;
+        }
         /// <summary>
         /// 转换hex格式地址
         /// </summary>
@@ -48,7 +73,7 @@ namespace Simple.Tron
         {
             byte[] address = Base58Encoder.DecodeFromBase58Check(base58_address);
             string hex_address = string.Concat(address.Select(b => b.ToString("x2")).ToArray());
-            return prefix ? hex_address : hex_address.Substring(2, hex_address.Length - 2);
+            return prefix ? hex_address : hex_address[2..];
         }
     }
 }

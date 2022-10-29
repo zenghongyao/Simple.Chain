@@ -14,5 +14,10 @@ namespace Simple.Tron
 
         }
 
+        public TronException(string message) : base(message)
+        {
+
+        }
+
     }
 }
