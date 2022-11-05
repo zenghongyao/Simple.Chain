@@ -1,6 +1,4 @@
-﻿using RestSharp;
-
-namespace Simple.Chain
+﻿namespace Simple.Chain
 {
     public class ChainException : Exception
     {

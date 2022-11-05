@@ -4,12 +4,11 @@ using Nethereum.ABI;
 using Nethereum.Contracts;
 using Nethereum.Contracts.Standards.ERC20.ContractDefinition;
 using Nethereum.Signer;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-using RestSharp;
 using Simple.Chain.Crypto;
 using Simple.Chain.Protocol;
+using System.Globalization;
 using System.Numerics;
+using System.Text;
 
 namespace Simple.Chain.Tron
 {
@@ -19,42 +18,11 @@ namespace Simple.Chain.Tron
     public class TronWallet : IWallet
     {
         private readonly Wallet.WalletClient _wallet;
-        public TronWallet()
+        public TronWallet(string rpcURL)
         {
-            Channel channel = new Channel("grpc.trongrid.io", 50051, ChannelCredentials.Insecure);
+            Uri uri = new(rpcURL);
+            Channel channel = new Channel(uri.Host, uri.Port, ChannelCredentials.Insecure);
             _wallet = new Wallet.WalletClient(channel);
-        }
-        /// <summary>
-        /// 默认主网
-        /// </summary>
-        private const string DEFAULT_MAINNET = "https://api.trongrid.io";
-
-
-        private readonly string baseUrl;
-
-        /// <summary>
-        /// 
-        /// </summary>
-        /// <param name="mainnet">主网</param>
-        /// <param name="testnet">测试（建议自行部署）</param>
-        /// <param name="proxy">代理地址</param>
-        public TronWallet(string mainnet = DEFAULT_MAINNET)
-        {
-            baseUrl = mainnet;
-        }
-
-        /// <summary>
-        /// 创建请求客户端
-        /// </summary>
-        /// <param name="requesturi"></param>
-        /// <param name="method"></param>
-        /// <returns></returns>
-        private RestClient CreateClient(string requesturi, Method method, out RestRequest request)
-        {
-            RestClient client;
-            client = new RestClient(baseUrl);
-            request = new RestRequest(requesturi, method);
-            return client;
         }
 
         public async Task<string> CreateAccountAsync(string privateKey, string address)
@@ -174,13 +142,15 @@ namespace Simple.Chain.Tron
                 ContractAddress = ByteString.CopyFrom(contractAddress),
                 OwnerAddress = ByteString.CopyFrom(fromAddress),
                 Data = ByteString.CopyFrom(encode.HexToByteArray()),
+
             };
             TransactionExtention transactionExtention = await _wallet.TriggerConstantContractAsync(contract);
-
+            if (!transactionExtention.Result.Result) throw new ChainException($"转账失败，{transactionExtention.Result.Message.ToStringUtf8()}", address: owner_address);
             Transaction transaction = transactionExtention.Transaction;
-
+            transaction.RawData.FeeLimit = 5 * 1000000L;
+            //签名
             SignTransaction(transaction, privateKey);
-
+            //广播
             var result = await _wallet.BroadcastTransactionAsync(transaction);
             if (!result.Result) throw new ChainException($"广播失败：{result.Message.ToStringUtf8()}", address: owner_address);
             return transaction.GetTxID();
@@ -193,41 +163,25 @@ namespace Simple.Chain.Tron
         /// <returns></returns>
         public Task<TransactionInfo> GetTransactionInfoAsync(string txId)
         {
-            RestClient client = CreateClient("/wallet/gettransactioninfobyid", Method.Post, out RestRequest request);
-            request.AddHeader("content-type", "application/json");
-            request.AddParameter("application/json", JsonConvert.SerializeObject(new { value = txId }), ParameterType.RequestBody);
-            RestResponse response = client.Execute(request);
-            if (!response.IsSuccessful || string.IsNullOrWhiteSpace(response.Content)) throw new ChainException(response.Content, address: string.Empty, hash: txId);
-            JObject obj = JObject.Parse(response.Content);
-            if (obj.Count == 0) throw new ChainException("交易不存在", address: string.Empty, hash: txId);
-            long fee = obj.Value<long>("fee");
-            int blockNumber = obj.Value<int>("blockNumber");
-            long timestamp = obj.Value<long>("blockTimeStamp");
-            string contract_address = obj.Value<string>("contract_address") ?? string.Empty;
-            var log = obj.Value<JArray>("log")?.Select(c => new
-            {
-                address = c.Value<string>("address"),
-                topics = c.Value<JArray>("topics")?.Select(t => t.Value<string>()).ToArray(),
-                data = c.Value<string>("data")
-            }).ToArray();
-            if (log == null || log.Length == 0) throw new ChainException("交易未完成", address: string.Empty, hash: txId);
-            var topics = log[0].topics;
-            if (topics == null) throw new ChainException("topices 不存在");
-            string result = obj.Value<JToken>("receipt").Value<string>("result");
-            string data = topics[1] + log[0].data;
-            TransferFunction transaction = new TransferFunction().DecodeInput(data);
-            decimal value = transaction.Value.ToNumber();
-            string from = topics[1][24..].ToBase58Address();
-            string to = topics[2][24..].ToBase58Address();
+            byte[] bytes = txId.HexToByteArray();
+            var info = _wallet.GetTransactionInfoById(new BytesMessage() { Value = ByteString.CopyFrom(bytes) });
+            if (info.Log == null || info.Log.Count == 0) return Task.FromResult(new TransactionInfo());
+            var log = info.Log[0];
+            string address = log.Address.ToByteArray().ToHex().ToBase58Address();
+            string data = log.Data.ToByteArray().ToHex();
+            BigInteger value = BigInteger.Parse(data, NumberStyles.HexNumber);
+            string from = log.Topics[1].ToByteArray().ToHex().ToBase58Address();
+            string to = log.Topics[2].ToByteArray().ToHex().ToBase58Address();
             return Task.FromResult(new TransactionInfo()
             {
-                BlockNumber = blockNumber,
-                ContractAddress = contract_address,
-                Value = value,
+                BlockNumber = info.BlockNumber,
+                ContractAddress = address,
+                Value = value.ToSum(),
                 From = from,
                 To = to,
-                Gas = fee.ToNumber(),
-                Timestamp = timestamp,
+                Status = info.Result.ToString() == "Sucess",
+                Gas = info.Fee.ToSum(),
+                Timestamp = info.BlockTimeStamp,
                 TransactionHash = txId,
             });
         }

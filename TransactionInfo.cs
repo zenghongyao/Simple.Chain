@@ -38,11 +38,16 @@ namespace Simple.Chain
         /// <summary>
         /// 区块高度
         /// </summary>
-        public int BlockNumber { get; set; }
+        public long BlockNumber { get; set; }
         /// <summary>
         /// 时间戳
         /// </summary>
         public long Timestamp { get; set; }
+
+        /// <summary>
+        /// 状态
+        /// </summary>
+        public bool Status { get; set; }
 
         public override string ToString()
         {
