@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Simple.Tron.Crypto
+namespace Simple.Chain.Crypto
 {
     public class ECDSASignature
     {

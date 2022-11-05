@@ -1,11 +1,10 @@
-﻿using Nethereum.Contracts;
-using Nethereum.Contracts.Standards.ERC20.ContractDefinition;
-using Newtonsoft.Json;
+﻿using Google.Protobuf;
 using Newtonsoft.Json.Linq;
+using Simple.Chain.Crypto;
 
-namespace Simple.Tron
+namespace Simple.Chain.Tron
 {
-    public class Transaction
+    internal class TronTransaction
     {
         public bool visible { get; set; }
         public string txID { get; set; }
@@ -17,32 +16,18 @@ namespace Simple.Tron
 
         public bool IsSuccess()
         {
-            foreach (var item in this.ret)
+            foreach (var item in ret)
             {
                 return item.Value<string>("contractRet") == "SUCCESS";
             }
             return false;
         }
 
-        /// <summary>
-        /// 获取合约参数数据
-        /// </summary>
-        /// <returns></returns>
-        public IEnumerable<TransferFunction> GetContractParameterData()
-        {
-            if (this.raw_data != null)
-            {
-                foreach (JToken item in this.raw_data["contract"])
-                {
-                    JToken parameter = item.Value<JToken>("parameter").Value<JToken>("value");
-                    yield return new TransferFunction().DecodeInput(parameter.Value<string>("data"));
-                }
-            }
-        }
 
-        public static implicit operator Transaction(string jsonString)
+
+        public static implicit operator TronTransaction(string jsonString)
         {
-            Transaction response = new Transaction();
+            TronTransaction response = new TronTransaction();
             JObject obj = JObject.Parse(jsonString);
             response.visible = obj.Value<bool>("visible");
             response.txID = obj.Value<string>("txID");
@@ -58,6 +43,8 @@ namespace Simple.Tron
             }
             return response;
         }
+
+      
 
     }
 }

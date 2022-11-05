@@ -1,90 +1,53 @@
-﻿using Nethereum.Contracts;
-using Nethereum.Contracts.Standards.ERC20.ContractDefinition;
-using Nethereum.Web3;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using Newtonsoft.Json;
 
-namespace Simple.Tron
+namespace Simple.Chain
 {
+    /// <summary>
+    /// 交易记录
+    /// </summary>
     public class TransactionInfo
     {
-        public string id { get; set; }
-        public int fee { get; set; }
-        public decimal Gas
-        {
-            get
-            {
-                return this.fee.ToNumber();
-            }
-        }
-        public int blockNumber { get; set; }
-
-        public long blockTimeStamp { get; set; }
-
-        public string[] contractResult { get; set; }
-        public string contract_address { get; set; }
-        public TransactionInfo_Receipt receipt { get; set; }
-        public TransactionInfo_Log[] log { get; set; }
-
         /// <summary>
-        /// 转出地址
+        /// 交易哈希
         /// </summary>
-        public string From_Address
-        {
-            get
-            {
-                return log[0].topics[1][24..].ToBase58Address();
-            }
-        }
+        public string TransactionHash { get; set; }
         /// <summary>
-        /// 转入地址
+        /// from
         /// </summary>
-        public string To_Address
-        {
-            get
-            {
-                return log[0].topics[2][24..].ToBase58Address();
-            }
-        }
+        public string From { get; set; }
+        /// <summary>
+        /// to
+        /// </summary>
+        public string To { get; set; }
+        /// <summary>
+        /// 合约地址
+        /// </summary>
+        public string ContractAddress { get; set; }
+        /// <summary>
+        /// gas
+        /// </summary>
+        public decimal Gas { get; set; }
+        /// <summary>
+        /// gas limit
+        /// </summary>
+        public decimal GasPrice { get; set; }
         /// <summary>
         /// 金额
         /// </summary>
-        public decimal Amount
-        {
-            get
-            {
-                string hex = log[0].topics[1] + log[0].data;
-                TransferFunction transaction = new TransferFunction().DecodeInput(hex);
-                return transaction.Value.ToNumber();
-            }
-        }
+        public decimal Value { get; set; }
         /// <summary>
-        /// 是否交易成功
+        /// 区块高度
         /// </summary>
-        public bool Success
+        public int BlockNumber { get; set; }
+        /// <summary>
+        /// 时间戳
+        /// </summary>
+        public long Timestamp { get; set; }
+
+        public override string ToString()
         {
-            get
-            {
-                return this.receipt.result == "SUCCESS";
-            }
+            return JsonConvert.SerializeObject(this);
         }
-    }
 
-    public class TransactionInfo_Receipt
-    {
-        public int energy_fee { get; set; }
-        public int energy_usage_total { get; set; }
-        public int net_usage { get; set; }
-        public string result { get; set; }
-    }
-
-    public class TransactionInfo_Log
-    {
-        public string address { get; set; }
-        public string[] topics { get; set; }
-        public string data { get; set; }
     }
 }
