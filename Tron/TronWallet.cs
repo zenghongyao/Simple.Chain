@@ -201,10 +201,33 @@ namespace Simple.Chain.Tron
         /// <param name="@event"></param>
         public void ContractEvent(string contract_address, string eventname, Action<TransactionEvent> @event)
         {
+
+        }
+
+        public decimal GetBalance(string address)
+        {
+            throw new NotImplementedException();
+        }
+
+        public decimal GetBalance(string address, string contractAddress)
+        {
+            throw new NotImplementedException();
+        }
+
+        public AccountInfo GenerateAddress()
+        {
+            EthECKey ecKey = EthECKey.GenerateKey();
+            Nethereum.Web3.Accounts.Account account = new(ecKey.GetPrivateKeyAsBytes());
+            return new AccountInfo() { Address = account.Address.ToBase58Address(), PrviateKey = account.PrivateKey };
+        }
+
+
+        public async Task ContractEventAsync(string abi, string contract_address, string eventname, Action<TransactionEvent> @event)
+        {
             long blockNumber = GetBlockNumber();
             while (blockNumber != 0)
             {
-                Block block = _wallet.GetBlockByNum(new NumberMessage { Num = blockNumber });
+                Block block = await _wallet.GetBlockByNumAsync(new NumberMessage { Num = blockNumber });
                 if (block.Transactions.Count == 0)
                 {
                     Thread.Sleep(100);
@@ -232,33 +255,6 @@ namespace Simple.Chain.Tron
                 blockNumber++;
                 Thread.Sleep(100);
             }
-        }
-
-        public decimal GetBalance(string address)
-        {
-            throw new NotImplementedException();
-        }
-
-        public decimal GetBalance(string address, string contractAddress)
-        {
-            throw new NotImplementedException();
-        }
-
-        public AccountInfo GenerateAddress()
-        {
-            EthECKey ecKey = EthECKey.GenerateKey();
-            Nethereum.Web3.Accounts.Account account = new(ecKey.GetPrivateKeyAsBytes());
-            return new AccountInfo() { Address = account.Address.ToBase58Address(), PrviateKey = account.PrivateKey };
-        }
-
-        public void ContractEvent(string abi, string contract_address, string eventname, Action<string> @event)
-        {
-            throw new NotImplementedException();
-        }
-
-        public Task ContractEventAsync(string abi, string contract_address, string eventname, Action<TransactionEvent> @event)
-        {
-            throw new NotImplementedException();
         }
     }
 }

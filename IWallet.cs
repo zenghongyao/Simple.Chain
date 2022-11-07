@@ -83,6 +83,5 @@ namespace Simple.Chain
         /// <param name="eventname"></param>
         /// <param name="event"></param>
         Task ContractEventAsync(string abi, string contract_address, string eventname, Action<TransactionEvent> @event);
-        void ContractEvent(string contract_address, string eventname, Action<TransactionEvent> @event);
     }
 }

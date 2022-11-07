@@ -125,7 +125,8 @@ namespace Simple.Chain.Eth
                     GasPrice = Web3.Convert.FromWei(receipt.CumulativeGasUsed.Value),
                     TransactionHash = receipt.TransactionHash,
                     Value = Web3.Convert.FromWei(amount),
-                    Timestamp = (long)(block.Timestamp.Value * 1000)
+                    Timestamp = (long)(block.Timestamp.Value * 1000),
+                    Status = receipt.Status.Value == 1
                 };
             }
             catch (Exception ex)
@@ -228,7 +229,8 @@ namespace Simple.Chain.Eth
             return Task.FromResult(new AccountInfo()
             {
                 Address = address,
-                Balance = this.GetBalance(address)
+                Balance = this.GetBalance(address),
+                Gas = 0.000255515M,
             });
         }
 
@@ -237,7 +239,8 @@ namespace Simple.Chain.Eth
             return Task.FromResult(new AccountInfo()
             {
                 Address = address,
-                Balance = this.GetBalance(address)
+                Balance = this.GetBalance(address),
+                Gas = 0.000255515M,
             });
         }
 
