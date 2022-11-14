@@ -12,7 +12,6 @@ namespace Simple.Chain
         /// <returns></returns>
         public static IWallet GetWalletClient(string chain, string rpcURL)
         {
-            if (string.IsNullOrWhiteSpace(rpcURL)) throw new ArgumentNullException(nameof(rpcURL));
             return chain.ToLower() switch
             {
                 "bsc" or "erc" => new EthWallet(rpcURL),
