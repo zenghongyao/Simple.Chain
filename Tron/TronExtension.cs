@@ -118,16 +118,17 @@ namespace Simple.Chain.Tron
 
         public static ContractParameter GetContractParameter(this string hex)
         {
-            if (hex.Length == 232)
+            try
             {
-                string from_address = hex.Substring(4, 42);
-                string contract_address = hex.Substring(50, 42);
-                string method = hex.Substring(96, 8);
-                string params_0 = hex.Substring(104, 64);
-                string params_1 = hex.Substring(168, 64);
-                BigInteger value = BigInteger.Parse(params_1, NumberStyles.HexNumber);
-                try
+                if (hex.Length == 232)
                 {
+                    string from_address = hex.Substring(4, 42);
+                    string contract_address = hex.Substring(50, 42);
+                    string method = hex.Substring(96, 8);
+                    string params_0 = hex.Substring(104, 64);
+                    string params_1 = hex.Substring(168, 64);
+                    BigInteger value = BigInteger.Parse(params_1, NumberStyles.HexNumber);
+
                     return new ContractParameter
                     {
                         ContractAddress = contract_address.ToBase58Address(),
@@ -137,11 +138,40 @@ namespace Simple.Chain.Tron
                         MethodID = method,
                     };
                 }
-                catch (Exception)
+                else if (hex.Length == 338)
+                {
+                    string from_address = hex.Substring(110, 42);
+                    string contract_address = hex.Substring(152, 46);
+                    string to_address = hex.Substring(232, 42);
+                    string params_1 = hex.Substring(hex.Length - 64, 64);
+                    BigInteger value = BigInteger.Parse(params_1, NumberStyles.HexNumber);
+                    return new ContractParameter()
+                    {
+                        From = from_address.ToBase58Address(),
+                        To = to_address.ToBase58Address(),
+                        ContractAddress = contract_address.ToBase58Address(),
+                        Value = value,
+                    };
+                }
+                else if (hex.Length == 200)
+                {
+                    string from_address = hex.Substring(102, 42);
+                    string to_address = hex.Substring(148, 42);
+                    return new ContractParameter()
+                    {
+                        From = from_address.ToBase58Address(),
+                        To = to_address.ToBase58Address(),
+                    };
+                }
+                //创建默认转入trx
+                else if (hex.Length == 194)
                 {
 
-                    throw;
                 }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(ex);
             }
             return null;
         }

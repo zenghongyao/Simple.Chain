@@ -31,8 +31,8 @@ namespace Simple.Chain
         }
         public long create_time { get; set; }
 
-        public long latest_opration_time { get; set; }
-        public int free_net_usage { get; set; }
+        public long Energy { get; set; }
+        public long FreeNetUsed { get; set; }
 
     }
 }

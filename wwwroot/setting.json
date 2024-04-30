@@ -1,0 +1,11 @@
+{
+    "tron": {
+        "collect_address": "TR1sVFGgpuryLDE6YvsxStzzdTcEL4bTnm",
+        "contract_address":"TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+        "mainnet": "https://api.trongrid.io"
+    },
+    "bsc":{
+        "rpcURL":"wss://solitary-snowy-river.bsc.quiknode.pro/16b4e8d1466a4e5c06c88145a2faed83b3661fd9/",
+        "contract_address":""
+    }
+}

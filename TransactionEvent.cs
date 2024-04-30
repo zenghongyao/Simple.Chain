@@ -13,6 +13,7 @@ namespace Simple.Chain
         /// 交易哈希
         /// </summary>
         public string TransactionHash { get; set; }
+        public string ContractAddress { get; set; }
         /// <summary>
         /// 区块高度
         /// </summary>
@@ -29,5 +30,9 @@ namespace Simple.Chain
         /// 金额
         /// </summary>
         public BigInteger Value { get; set; }
+        /// <summary>
+        /// 交易时间
+        /// </summary>
+        public long Timestamp { get; set; }
     }
 }

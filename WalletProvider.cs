@@ -15,7 +15,7 @@ namespace Simple.Chain
             return chain.ToLower() switch
             {
                 "bsc" or "erc" => new EthWallet(rpcURL),
-                "trc" => new TronWallet(rpcURL),
+                "tron" => new TronWallet(rpcURL),
                 _ => throw new ChainException($"{chain}未实现"),
             };
         }

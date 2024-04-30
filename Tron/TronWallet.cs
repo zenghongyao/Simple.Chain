@@ -4,6 +4,7 @@ using Nethereum.ABI;
 using Nethereum.Contracts;
 using Nethereum.Contracts.Standards.ERC20.ContractDefinition;
 using Nethereum.Signer;
+using Newtonsoft.Json;
 using Simple.Chain.Crypto;
 using Simple.Chain.Protocol;
 using System.Globalization;
@@ -57,11 +58,13 @@ namespace Simple.Chain.Tron
                 Address = ByteString.CopyFrom(ownerAddress),
             };
             var response = await _wallet.GetAccountAsync(request);
+            var resource = _wallet.GetAccountResource(request);
             return new AccountInfo
             {
                 Address = address,
                 Balance = response.Balance.ToSum(),
-                Gas = 4.102M
+                FreeNetUsed = resource.NetLimit + resource.FreeNetLimit - resource.NetUsed - resource.FreeNetUsed,
+                Energy = resource.EnergyLimit - resource.EnergyUsed
             };
         }
 
@@ -142,12 +145,11 @@ namespace Simple.Chain.Tron
                 ContractAddress = ByteString.CopyFrom(contractAddress),
                 OwnerAddress = ByteString.CopyFrom(fromAddress),
                 Data = ByteString.CopyFrom(encode.HexToByteArray()),
-
             };
             TransactionExtention transactionExtention = await _wallet.TriggerConstantContractAsync(contract);
             if (!transactionExtention.Result.Result) throw new ChainException($"转账失败，{transactionExtention.Result.Message.ToStringUtf8()}", address: owner_address);
             Transaction transaction = transactionExtention.Transaction;
-            transaction.RawData.FeeLimit = 5 * 1000000L;
+            transaction.RawData.FeeLimit = 30M.FromSum();
             //签名
             SignTransaction(transaction, privateKey);
             //广播
@@ -165,25 +167,39 @@ namespace Simple.Chain.Tron
         {
             byte[] bytes = txId.HexToByteArray();
             var info = _wallet.GetTransactionInfoById(new BytesMessage() { Value = ByteString.CopyFrom(bytes) });
-            if (info.Log == null || info.Log.Count == 0) return Task.FromResult(new TransactionInfo());
-            var log = info.Log[0];
-            string address = log.Address.ToByteArray().ToHex().ToBase58Address();
-            string data = log.Data.ToByteArray().ToHex();
-            BigInteger value = BigInteger.Parse(data, NumberStyles.HexNumber);
-            string from = log.Topics[1].ToByteArray().ToHex().ToBase58Address();
-            string to = log.Topics[2].ToByteArray().ToHex().ToBase58Address();
-            return Task.FromResult(new TransactionInfo()
+            if (info.Log.Count == 0)
             {
-                BlockNumber = info.BlockNumber,
-                ContractAddress = address,
-                Value = value.ToSum(),
-                From = from,
-                To = to,
-                Status = info.Result.ToString() == "Sucess",
-                Gas = info.Fee.ToSum(),
-                Timestamp = info.BlockTimeStamp,
-                TransactionHash = txId,
-            });
+                return Task.FromResult(new TransactionInfo
+                {
+                    BlockNumber = info.BlockNumber,
+                    Status = info.Result == Protocol.TransactionInfo.Types.code.Sucess,
+                    Timestamp = info.BlockTimeStamp,
+                    TransactionHash = txId,
+                    Gas = info.Fee.ToSum(),
+                });
+            }
+            else
+            {
+                var log = info.Log[0];
+                string address = log.Address.ToByteArray().ToHex().ToBase58Address();
+                string data = log.Data.ToByteArray().ToHex();
+                BigInteger value = BigInteger.Parse(data, NumberStyles.HexNumber);
+                string from = log.Topics[1].ToByteArray().ToHex().ToBase58Address();
+                string to = log.Topics[2].ToByteArray().ToHex().ToBase58Address();
+                return Task.FromResult(new TransactionInfo()
+                {
+                    BlockNumber = info.BlockNumber,
+                    ContractAddress = address,
+                    Value = value.ToSum(),
+                    From = from,
+                    To = to,
+                    Status = info.Result == Protocol.TransactionInfo.Types.code.Sucess,
+                    Gas = info.Fee.ToSum(),
+                    Timestamp = info.BlockTimeStamp,
+                    TransactionHash = txId,
+                });
+            }
+
         }
 
         /// <summary>
@@ -206,12 +222,14 @@ namespace Simple.Chain.Tron
 
         public decimal GetBalance(string address)
         {
-            throw new NotImplementedException();
+            var account = GetAccountAsync(address).Result;
+            return account.Balance;
         }
 
         public decimal GetBalance(string address, string contractAddress)
         {
-            throw new NotImplementedException();
+            var account = GetAccountAsync(address, contractAddress).Result;
+            return account.Balance;
         }
 
         public AccountInfo GenerateAddress()
@@ -224,36 +242,52 @@ namespace Simple.Chain.Tron
 
         public async Task ContractEventAsync(string abi, string contract_address, string eventname, Action<TransactionEvent> @event)
         {
-            long blockNumber = GetBlockNumber();
-            while (blockNumber != 0)
+            long number = 0;
+            while (true)
             {
-                Block block = await _wallet.GetBlockByNumAsync(new NumberMessage { Num = blockNumber });
-                if (block.Transactions.Count == 0)
+                try
                 {
-                    Thread.Sleep(100);
-                    continue;
-                }
-                foreach (Transaction item in block.Transactions)
-                {
-                    string txId = item.GetTxID();
-                    if (item.RawData.Contract.Count > 0)
+                    Thread.Sleep(1000);
+                    long blockNumber = GetBlockNumber();
+                    if (blockNumber == number) continue;
+                    number = blockNumber;
+                    Console.WriteLine($"当前区块：{blockNumber}");
+                    Block block = await _wallet.GetBlockByNumAsync(new NumberMessage { Num = blockNumber });
+                    foreach (Transaction item in block.Transactions)
                     {
-                        foreach (var contract in item.RawData.Contract)
+                        try
                         {
-                            string name = contract.Type.ToString();
-                            if (name == "TriggerSmartContract")
+                            string txId = item.GetTxID();
+                            if (item.RawData.Contract.Count == 0) continue;
+                            var data = item.RawData.Contract[0];
+                            //TransferContract TriggerSmartContract
+                            switch (data.Type)
                             {
-                                var parameter = contract.Parameter.Value.ToByteArray().ToHex().GetContractParameter();
-                                if (parameter != null && parameter.ContractAddress == contract_address && parameter.MethodID == Web3Utils.GetMethodID(eventname))
-                                {
-                                    @event(new TransactionEvent { TransactionHash = txId, Block = blockNumber, From = parameter.From, To = parameter.To, Value = parameter.Value });
-                                }
+                                case Transaction.Types.Contract.Types.ContractType.TransferContract:
+                                case Transaction.Types.Contract.Types.ContractType.TriggerSmartContract:
+                                    {
+                                        string hex = data.Parameter.ToByteArray().ToHex();
+
+                                        var parameter = hex.GetContractParameter();
+                                        if (parameter == null) continue;
+                                        if (parameter.Value > int.MaxValue) continue;
+                                        @event(new TransactionEvent { TransactionHash = txId, ContractAddress = parameter.ContractAddress, Block = blockNumber, From = parameter.From, To = parameter.To, Value = parameter.Value });
+                                        //Console.WriteLine(hex);
+                                        //Console.WriteLine($"交易时间：{item.RawData.Timestamp} 交易哈希：{txId} 合约：{parameter.ContractAddress} 发送地址：{parameter.From} 接收地址：{parameter.To} 金额：{parameter.Value.ToSum()}");
+                                    }
+                                    break;
                             }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine(ex);
                         }
                     }
                 }
-                blockNumber++;
-                Thread.Sleep(100);
+                catch (Exception ex)
+                {
+                    Console.WriteLine(ex);
+                }
             }
         }
     }
